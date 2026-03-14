@@ -111,6 +111,13 @@ public class UltNoodleEditor : EditorWindow
         var helpMenu = root.Q<ToolbarMenu>("HelpMenu");
 
         nodesMenu.menu.AppendAction("Force Regenerate Nodes", (a) => CollectNodes(true), (a) => _collecting ? DropdownMenuAction.Status.Disabled : DropdownMenuAction.Status.Normal);
+
+        nodesMenu.menu.AppendAction("Use Node Cache", (a) =>
+        {
+            bool enabled = !EditorPrefs.GetBool("UseNodeCache", true);
+            EditorPrefs.SetBool("UseNodeCache", enabled);
+        }, (a) => EditorPrefs.GetBool("UseNodeCache", true) ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal);
+
         nodesMenu.menu.AppendAction("Rebuild Nodes on Assembly Change", (a) =>
         {
             bool enabled = !EditorPrefs.GetBool("RebuildOnAssemblyChange", false); // default to false, most nodes won't change on assembly since custom scripts don't work
@@ -156,7 +163,7 @@ public class UltNoodleEditor : EditorWindow
 
         if ((AllNodeDefs.Count == 0 || AllBooks == null) && !Application.isPlaying)
         {
-            CollectNodes();
+            CollectNodes(!EditorPrefs.GetBool("UseNodeCache", true));
         }
         _created = true;
     }
