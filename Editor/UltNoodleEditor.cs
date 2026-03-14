@@ -57,7 +57,7 @@ public class UltNoodleEditor : EditorWindow
     }
 
     public UltNoodleTreeView TreeView => treeView;
-    
+
     private UltNoodleTreeView treeView;
     private UltNoodleInspectorView inspectorView;
     private UltNoodleBowlSelector bowlSelector;
@@ -88,7 +88,7 @@ public class UltNoodleEditor : EditorWindow
         Selection.selectionChanged += () => contextChanged(EditorPrefs.GetBool("SelectedBowlsOnly", true));
 
         // Fixes issue where having the editor open when going in then out of play mode causes the search window to infinitely throw exceptions
-        EditorApplication.playModeStateChanged += (_) => contextChanged();
+        //EditorApplication.playModeStateChanged += (_) => contextChanged();
         EditorApplication.playModeStateChanged += (_) => Editor.Close();
 
         treeView = root.Q<UltNoodleTreeView>();
@@ -110,7 +110,12 @@ public class UltNoodleEditor : EditorWindow
         var compilationMenu = root.Q<ToolbarMenu>("CompilationMenu");
         var helpMenu = root.Q<ToolbarMenu>("HelpMenu");
 
-        nodesMenu.menu.AppendAction("Regenerate Nodes", (a) => CollectNodes(), (a) => _collecting ? DropdownMenuAction.Status.Disabled : DropdownMenuAction.Status.Normal);
+        nodesMenu.menu.AppendAction("Force Regenerate Nodes", (a) => CollectNodes(true), (a) => _collecting ? DropdownMenuAction.Status.Disabled : DropdownMenuAction.Status.Normal);
+        nodesMenu.menu.AppendAction("Rebuild Nodes on Assembly Change", (a) =>
+        {
+            bool enabled = !EditorPrefs.GetBool("RebuildOnAssemblyChange", false); // default to false, most nodes won't change on assembly since custom scripts don't work
+            EditorPrefs.SetBool("RebuildOnAssemblyChange", enabled);
+        }, (a) => EditorPrefs.GetBool("RebuildOnAssemblyChange", false) ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal);
 
         void UpdateSplit() => UpdateLeftSplitVisibility(leftSplit, mainSplit, inspectorView.visible, bowlSelector.visible);
         viewMenu.menu.AppendAction("Inspector", (a) => { inspectorView.visible = !inspectorView.visible; UpdateSplit(); }, (a) => inspectorView.visible ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal);
@@ -123,17 +128,17 @@ public class UltNoodleEditor : EditorWindow
             _bowlToReselect = !enabled || Selection.activeGameObject == _currentBowl?.SerializedData?.gameObject
                 ? _currentBowl?.SerializedData
                 : null; // only reselect if we're disabling the toggle or the current bowl's gameobject is selected
-            
+
             ResetViews();
             OnFocus(); // update displays
         }, (a) => EditorPrefs.GetBool("SelectedBowlsOnly", true) ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal);
         viewMenu.menu.AppendAction("Rebuild View", (a) => contextChanged(), (a) => DropdownMenuAction.Status.Normal);
 
-        compilationMenu.menu.AppendAction("Add Debug Logs", (_) => 
-            UltNoodleRuntimeExtensions.DEBUG_IN_COMP = !UltNoodleRuntimeExtensions.DEBUG_IN_COMP, 
+        compilationMenu.menu.AppendAction("Add Debug Logs", (_) =>
+            UltNoodleRuntimeExtensions.DEBUG_IN_COMP = !UltNoodleRuntimeExtensions.DEBUG_IN_COMP,
             (_) => UltNoodleRuntimeExtensions.DEBUG_IN_COMP ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal);
 
-        compilationMenu.menu.AppendAction("Use Inline Ultswaps", (_) => 
+        compilationMenu.menu.AppendAction("Use Inline Ultswaps", (_) =>
         {
             bool enabled = !EditorPrefs.GetBool("InlineUltswaps");
             EditorPrefs.SetBool("InlineUltswaps", enabled);
@@ -200,7 +205,7 @@ public class UltNoodleEditor : EditorWindow
 
     private Label LoadingText;
     private static bool _collecting;
-    
+
     private static Type[] s_tps;
     public static Type[] SearchableTypes
     {
@@ -216,16 +221,29 @@ public class UltNoodleEditor : EditorWindow
         }
     }
 
-    private void CollectNodes()
+    private void CollectNodes(bool skipCache = false)
     {
         if (_collecting) return;
         _collecting = true;
 
         // Creates all NodeDefs, clearing the pre-existing ones
         AllNodeDefs.Clear();
-
         CollectBooks();
 
+        if (!skipCache && NodeDefCacheManager.TryLoadCache(AllBooks, out var cachedDefs, EditorPrefs.GetBool("RebuildOnAssemblyChange", false),
+            (current, total, percentage) =>
+            {
+                LoadingText.text = $"Loading cache: {current:N0} / {total:N0} nodes ({percentage:P0})";
+            }))
+        {
+            AllNodeDefs.AddRange(cachedDefs);
+            LoadingText.text = $"Loaded {AllNodeDefs.Count:N0} nodes from cache!";
+            Debug.Log($"[NoodleEditor] Loaded {AllNodeDefs.Count:N0} nodes from cache!");
+            _collecting = false;
+            return;
+        }
+
+        // no cache, we gotta do it the slow way
         Dictionary<CookBook, float> nodeProgression = new();
         foreach (var b in AllBooks)
             nodeProgression[b] = new();
@@ -255,43 +273,20 @@ public class UltNoodleEditor : EditorWindow
                 nodeProgression[b] = 1;
                 if (nodeProgression.Values.All(p => p == 1))
                 {
-                    LoadingText.text = $"All {AllNodeDefs.Count} Nodes Loaded!";
+                    Debug.Log($"[NoodleEditor] All {AllNodeDefs.Count:N0} nodes loaded! Saving to cache...");
+                    NodeDefCacheManager.SaveCache(AllNodeDefs,
+                        (current, total, percentage) =>
+                        {
+                            LoadingText.text = $"Saving cache: {current:N0} / {total:N0} nodes ({percentage:P0})";
+                            Debug.Log($"[NoodleEditor] Saving cache: {current:N0} / {total:N0} nodes ({percentage:P0})");
+                        });
+
+                    LoadingText.text = $"{AllNodeDefs.Count:N0} Nodes Loaded and Cached!";
+                    Debug.Log($"[NoodleEditor] All {AllNodeDefs.Count:N0} Nodes Loaded and Cached!");
                     _collecting = false;
                 }
             }));
         }
-        /*
-        int cur = 0;
-        CookBook book = AllBooks[cur];
-        IEnumerator mover = null;
-        int final = AllBooks.Count();
-
-        EditorApplication.CallbackFunction loop = null;
-        loop = () =>
-        {
-            //EditorUtility.DisplayProgressBar("Loading Noodle Editor...", book.name, (float)cur / final);
-
-            if (mover == null)
-                mover = book.CollectDefs(AllNodeDefs).GetEnumerator();
-
-            bool joever = !mover.MoveNext();
-            if (joever)
-            {
-                mover = null;
-                cur++;
-                if (cur == final)
-                {
-                    ResetSearchFilter();
-                    EditorUtility.ClearProgressBar(); 
-                    _collecting = false;
-                    LoadingText.text = "";
-                    return;
-                }
-                book = AllBooks[cur];
-            }
-            EditorApplication.delayCall += loop;
-        };
-        loop.Invoke();*/
 
     }
     private void CollectBooks()
@@ -469,7 +464,7 @@ public class UltNoodleEditor : EditorWindow
 
     [MenuItem("GameObject/Instant Noodles/UltEventHolder Bowl", true)] static bool vin1(MenuCommand command) => command.context ? !PrefabUtility.IsPartOfAnyPrefab(command.context) : true;
     [MenuItem("GameObject/Instant Noodles/UltEventHolder Bowl")]
-    static void UltEventHolderInstantNoodle(MenuCommand menuCommand) 
+    static void UltEventHolderInstantNoodle(MenuCommand menuCommand)
         => InstantInstantNoodle(menuCommand.context as GameObject, typeof(UltEventHolder), "_Event");
     [MenuItem("GameObject/Instant Noodles/DelayedUltEventHolder Bowl")]
     static void DelayedUltEventHolderInstantNoodle(MenuCommand menuCommand)
@@ -495,7 +490,6 @@ public class UltNoodleEditor : EditorWindow
         var targ = command.context as LifeCycleEvents;
         if (Editor == null) OpenWindow();
         Editor.NewBowl(targ, new SerializedType(typeof(LifeCycleEvents)), "_AwakeEvent");
-        
     }
     [MenuItem("CONTEXT/LifeCycleEvents/Noodle Bowl/Start()", true)] static bool v4(MenuCommand command) => !PrefabUtility.IsPartOfAnyPrefab(command.context);
     [MenuItem("CONTEXT/LifeCycleEvents/Noodle Bowl/Start()")]
@@ -519,9 +513,9 @@ public class UltNoodleEditor : EditorWindow
     {
         var targ = command.context as LifeCycleEvents;
         if (Editor == null) OpenWindow();
-        Editor.NewBowl(targ, new SerializedType(typeof(LifeCycleEvents)), "_DisableEvent");    
+        Editor.NewBowl(targ, new SerializedType(typeof(LifeCycleEvents)), "_DisableEvent");
     }
-    
+
     [MenuItem("CONTEXT/LifeCycleEvents/Noodle Bowl/Destroy()", true)] static bool v7(MenuCommand command) => !PrefabUtility.IsPartOfAnyPrefab(command.context);
     [MenuItem("CONTEXT/LifeCycleEvents/Noodle Bowl/Destroy()")]
     static void LifeCycleEvents_DestroyEvent(MenuCommand command)
@@ -529,7 +523,6 @@ public class UltNoodleEditor : EditorWindow
         var targ = command.context as LifeCycleEvents;
         if (Editor == null) OpenWindow();
         Editor.NewBowl(targ, new SerializedType(typeof(LifeCycleEvents)), "_DestroyEvent");
-        
     }
     [MenuItem("CONTEXT/UpdateEvents/Noodle Bowl/Update()", true)] static bool v8(MenuCommand command) => !PrefabUtility.IsPartOfAnyPrefab(command.context);
     [MenuItem("CONTEXT/UpdateEvents/Noodle Bowl/Update()")]
@@ -544,8 +537,8 @@ public class UltNoodleEditor : EditorWindow
     static void UpdateEvents_LateUpdateEvent(MenuCommand command)
     {
         var targ = command.context as UpdateEvents;
-            if (Editor == null) OpenWindow();
-            Editor.NewBowl(targ, new SerializedType(typeof(UpdateEvents)), "_LateUpdateEvent");
+        if (Editor == null) OpenWindow();
+        Editor.NewBowl(targ, new SerializedType(typeof(UpdateEvents)), "_LateUpdateEvent");
     }
     [MenuItem("CONTEXT/UpdateEvents/Noodle Bowl/Fixed Update()", true)] static bool v10(MenuCommand command) => !PrefabUtility.IsPartOfAnyPrefab(command.context);
     [MenuItem("CONTEXT/UpdateEvents/Noodle Bowl/Fixed Update()")]
