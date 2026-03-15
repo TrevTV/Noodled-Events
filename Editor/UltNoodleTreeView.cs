@@ -334,7 +334,8 @@ public class UltNoodleTreeView : GraphView
                 if (di.Type.Type == typeof(Type))
                     return di.DefaultStringValue; // inline types are stored as strings
                 return constant;
-            }).ToArray()
+            }).ToArray(),
+            inputVarManConsts = nv.Node.DataInputs.Select(di => di.EditorConstName).ToArray()
         }).ToList();
 
         var edges = elements.OfType<Edge>()
@@ -435,6 +436,18 @@ public class UltNoodleTreeView : GraphView
                     constant = GlobalObjectId.GlobalObjectIdentifierToObjectSlow(globalId);
                 }
                 nod.DataInputs[i].SetDefault(constant);
+                string varManConst = nodeData.inputVarManConsts[i]; // var always exists, it just may be null or empty
+                if (!string.IsNullOrEmpty(varManConst))
+                {
+                    var varManVar = bowl.VarManVars.FirstOrDefault(v => v.Name == varManConst && v.ConstInput == nod.DataInputs[i].GetPCallType());
+                    if (varManVar != null)
+                    {
+                        nod.DataInputs[i].EditorConstName = nodeData.inputVarManConsts[i];
+                        nod.DataInputs[i].ValDefs = varManVar.ValDefs;
+                        nod.DataInputs[i].DefaultObject = varManVar.DefaultObject;
+                        nod.DataInputs[i].DefaultStringValue = varManVar.DefaultStringValue;
+                    }
+                }
             }
 
             bowl.Validate();
@@ -698,6 +711,7 @@ public class UltNoodleTreeView : GraphView
         public string nodeDefName;
         public Vector2 position;
         public object[] inputConstants;
+        public string[] inputVarManConsts;
     }
 
     [Serializable]
