@@ -7,6 +7,7 @@ using System.Linq;
 using UltEvents;
 using UnityEditor;
 using UnityEditor.Experimental.GraphView;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -25,6 +26,8 @@ public class UltNoodleTreeView : GraphView
 
     private Port _pendingEdgeOriginPort;
     private Vector2 _newNodeSpawnPos;
+
+    private static readonly GUID EMPTY_GUID = new GUID();
 
     private static readonly JsonSerializerSettings _serializerSettings = new()
     {
@@ -333,6 +336,24 @@ public class UltNoodleTreeView : GraphView
                     return (int)constant; // enums are stored as ints
                 if (di.Type.Type == typeof(Type))
                     return di.DefaultStringValue; // inline types are stored as strings
+
+                if (constant is UnityEngine.Object obj && obj != null)
+                {
+                    var globalId = GlobalObjectId.GetGlobalObjectIdSlow(obj);
+                    if (globalId.assetGUID == EMPTY_GUID) // this happen a lot with prefab stages, so we work around it by serializing heirarchy paths instead
+                    {
+                        var comp = obj as Component;
+                        var go = comp != null ? comp.gameObject : obj as GameObject;
+                        if (go != null)
+                        {
+                            string path = GetHierarchyPath(go);
+                            string typeName = obj.GetType().FullName;
+                            return $"SceneRef::{path}::{typeName}";
+                        }
+                    }
+                    return globalId.ToString();
+                }
+
                 return constant;
             }).ToArray(),
             inputVarManConsts = nv.Node.DataInputs.Select(di => di.EditorConstName).ToArray()
@@ -426,14 +447,41 @@ public class UltNoodleTreeView : GraphView
                 }
 
                 object constant = nodeData.inputConstants[i];
-                if (constant is string str && str.StartsWith("GlobalObjectId_V1"))
+                if (constant is string str)
                 {
-                    if (!GlobalObjectId.TryParse(str, out var globalId))
+                    if (str.StartsWith("GlobalObjectId_V1"))
                     {
-                        Debug.LogWarning($"Could not parse GlobalObjectId when pasting node {nod.ID}, input {i}, skipping");
-                        continue;
+                        if (!GlobalObjectId.TryParse(str, out var globalId))
+                        {
+                            Debug.LogWarning($"Could not parse GlobalObjectId when pasting node {nod.ID}, input {i}, skipping");
+                            continue;
+                        }
+                        constant = GlobalObjectId.GlobalObjectIdentifierToObjectSlow(globalId);
                     }
-                    constant = GlobalObjectId.GlobalObjectIdentifierToObjectSlow(globalId);
+
+                    if (str.StartsWith("SceneRef::"))
+                    {
+                        var parts = str.Split("::");
+                        string path = parts[1];
+                        string typeName = parts[2];
+
+                        var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
+                        var root = prefabStage != null
+                            ? prefabStage.prefabContentsRoot.transform
+                            : null;
+
+                        var go = root != null ? FindByHierarchyPath(root, path) : null;
+                        if (go == null)
+                        {
+                            Debug.LogWarning($"Could not find scene object at path '{path}' when pasting, skipping");
+                            continue;
+                        }
+
+                        var type = UltNoodleEditor.SearchableTypes.FirstOrDefault(t => t.FullName == typeName);
+                        constant = type == typeof(GameObject)
+                            ? (UnityEngine.Object)go
+                            : go.GetComponent(type);
+                    }
                 }
                 nod.DataInputs[i].SetDefault(constant);
                 string varManConst = nodeData.inputVarManConsts[i]; // var always exists, it just may be null or empty
@@ -693,6 +741,27 @@ public class UltNoodleTreeView : GraphView
         var dropdown = container?.Q<DropdownField>("VarManDropdown");
         if (dropdown != null)
             dropdown.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+    }
+
+    private string GetHierarchyPath(GameObject go)
+    {
+        string path = go.name;
+        var t = go.transform.parent;
+        while (t != null) { path = t.name + "/" + path; t = t.parent; }
+        return path;
+    }
+
+    private GameObject FindByHierarchyPath(Transform root, string path)
+    {
+        var parts = path.Split('/');
+        // skip the root name itself since we're already starting there
+        Transform cur = root;
+        foreach (var part in parts.Skip(1))
+        {
+            cur = cur.Cast<Transform>().FirstOrDefault(t => t.name == part);
+            if (cur == null) return null;
+        }
+        return cur?.gameObject;
     }
 
     [Serializable]
