@@ -310,10 +310,11 @@ namespace NoodledEvents
 
                         UltNoodleSearchWindow.ForceClose();
                     });
-                    
+
+                    string staticStr = def.CookBook is StaticMethodCookBook ? "static " : "";
                     string parameters = string.Join(", ", def.Inputs.Where(i => i.Type != null).Select(i => i.Type.Name));
                     string outputs = string.Join(", ", def.Outputs.Where(o => o.Type != null).Select(o => o.Type.Name));
-                    string completeSearchText = $"{def.Name} ({parameters}) -> ({outputs})";
+                    string completeSearchText = $"{staticStr}{def.Name} ({parameters}) -> ({outputs})";
 
                     def.searchTextParameters = completeSearchText;
 
