@@ -5,6 +5,7 @@ using System.Linq;
 using UltEvents;
 using UnityEditor;
 using UnityEditor.UIElements;
+using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace NoodledEvents.Assets.Noodled_Events
@@ -19,6 +20,31 @@ namespace NoodledEvents.Assets.Noodled_Events
         private bool _settings;
         // List of "UI_ListElement", which handles modifying & applying vars
         public ScrollView VarList;
+
+        private Dictionary<Button, Action> _forceClickers = new();
+        private Dictionary<PersistentArgumentType, Type> Typz = new Dictionary<PersistentArgumentType, Type>()
+        {
+            { PersistentArgumentType.Int, typeof(int)},
+            { PersistentArgumentType.Float, typeof(float)},
+            { PersistentArgumentType.Bool, typeof(bool) },
+            { PersistentArgumentType.String, typeof(string) },
+            { PersistentArgumentType.Object, typeof(UnityEngine.Object) },
+            { PersistentArgumentType.Vector2, typeof(Vector2) },
+            { PersistentArgumentType.Vector3, typeof(Vector3) },
+            { PersistentArgumentType.Color, typeof(Color) },
+        };
+        private Dictionary<string, PersistentArgumentType> TypeNames = new Dictionary<string, PersistentArgumentType>()
+        {
+            { "int", PersistentArgumentType.Int },
+            { "float", PersistentArgumentType.Float },
+            { "bool", PersistentArgumentType.Bool },
+            { "string", PersistentArgumentType.String },
+            { "obj", PersistentArgumentType.Object },
+            { "vector2", PersistentArgumentType.Vector2 },
+            { "vector3", PersistentArgumentType.Vector3 },
+            { "color", PersistentArgumentType.Color },
+        };
+
         public override VisualElement CreateInspectorGUI()
         {
             myMan = (VarMan)target;
@@ -29,61 +55,26 @@ namespace NoodledEvents.Assets.Noodled_Events
 
             var varNamer = myInspector.Q<TextField>("NewVarName");
 
-            myInspector.Q<Button>("bool").clicked += () =>
+            foreach (var pair in TypeNames)
             {
-                var @new = new NoodleDataInput();
-                @new.Name = varNamer.value;
-                @new.ConstInput = PersistentArgumentType.Bool;
+                myInspector.Q<Button>(pair.Key).clicked += () =>
+                {
+                    if (myMan.Vars.Any(v => v.Name == varNamer.value))
+                    {
+                        EditorUtility.DisplayDialog("Duplicate Var Name", $"A variable with the name \"{varNamer.value}\" already exists! Please choose a different name.", "OK");
+                        return;
+                    }
 
-                myMan.Vars = myMan.Vars.Append(@new).ToArray();
-                EditorUtility.SetDirty(myMan); PrefabUtility.RecordPrefabInstancePropertyModifications(myMan);
-                varNamer.value = "";
-                RegenList();
-            };
-            myInspector.Q<Button>("string").clicked += () =>
-            {
-                var @new = new NoodleDataInput();
-                @new.Name = varNamer.value;
-                @new.ConstInput = PersistentArgumentType.String;
+                    var @new = new NoodleDataInput();
+                    @new.Name = varNamer.value;
+                    @new.ConstInput = pair.Value;
 
-                myMan.Vars = myMan.Vars.Append(@new).ToArray();
-                EditorUtility.SetDirty(myMan); PrefabUtility.RecordPrefabInstancePropertyModifications(myMan);
-                varNamer.value = "";
-                RegenList();
-            };
-            myInspector.Q<Button>("float").clicked += () =>
-            {
-                var @new = new NoodleDataInput();
-                @new.Name = varNamer.value;
-                @new.ConstInput = PersistentArgumentType.Float;
-
-                myMan.Vars = myMan.Vars.Append(@new).ToArray();
-                EditorUtility.SetDirty(myMan); PrefabUtility.RecordPrefabInstancePropertyModifications(myMan);
-                varNamer.value = "";
-                RegenList();
-            };
-            myInspector.Q<Button>("int").clicked += () =>
-            {
-                var @new = new NoodleDataInput();
-                @new.Name = varNamer.value;
-                @new.ConstInput = PersistentArgumentType.Int;
-
-                myMan.Vars = myMan.Vars.Append(@new).ToArray();
-                EditorUtility.SetDirty(myMan); PrefabUtility.RecordPrefabInstancePropertyModifications(myMan);
-                varNamer.value = "";
-                RegenList();
-            };
-            myInspector.Q<Button>("obj").clicked += () =>
-            {
-                var @new = new NoodleDataInput();
-                @new.Name = varNamer.value;
-                @new.ConstInput = PersistentArgumentType.Object;
-
-                myMan.Vars = myMan.Vars.Append(@new).ToArray();
-                EditorUtility.SetDirty(myMan); PrefabUtility.RecordPrefabInstancePropertyModifications(myMan);
-                varNamer.value = "";
-                RegenList(); 
-            }; 
+                    myMan.Vars = myMan.Vars.Append(@new).ToArray();
+                    EditorUtility.SetDirty(myMan); PrefabUtility.RecordPrefabInstancePropertyModifications(myMan);
+                    varNamer.value = "";
+                    RegenList();
+                };
+            }
 
             var title = myInspector.Q<Label>("Title");
             myInspector.Q<ColorField>("FillSetting").RegisterValueChangedCallback(e => title.style.color = e.newValue);
@@ -199,6 +190,30 @@ namespace NoodledEvents.Assets.Noodled_Events
                             t.RegisterValueChangedCallback((e) => {SData.DefaultObject = e.newValue; AutoEnforce(); });
                             break;
                         }
+                    case PersistentArgumentType.Vector2:
+                        {
+                            var t = new Vector2Field("");
+                            vfr.Add(t);
+                            t.value = SData.DefaultVector2Value;
+                            t.RegisterValueChangedCallback((e) => { SData.DefaultVector2Value = e.newValue; AutoEnforce(); });
+                            break;
+                        }
+                    case PersistentArgumentType.Vector3:
+                        {
+                            var t = new Vector3Field("");
+                            vfr.Add(t);
+                            t.value = SData.DefaultVector3Value;
+                            t.RegisterValueChangedCallback((e) => { SData.DefaultVector3Value = e.newValue; AutoEnforce(); });
+                            break;
+                        }
+                    case UltEvents.PersistentArgumentType.Color:
+                        {
+                            var t = new ColorField("");
+                            vfr.Add(t);
+                            t.value = SData.DefaultColorValue;
+                            t.RegisterValueChangedCallback((e) => { SData.DefaultColorValue = e.newValue; AutoEnforce(); });
+                            break;
+                        }
                     default:
                         // uhhhh
                         break;
@@ -254,15 +269,6 @@ namespace NoodledEvents.Assets.Noodled_Events
                 VarList.Add(entry);
             }
         }
-        private Dictionary<Button, Action> _forceClickers = new();
-        private Dictionary<PersistentArgumentType, Type> Typz = new Dictionary<PersistentArgumentType, Type>()
-        {
-            { PersistentArgumentType.Int, typeof(int)},
-            { PersistentArgumentType.Float, typeof(float)},
-            { PersistentArgumentType.Bool, typeof(bool) },
-            { PersistentArgumentType.String, typeof(string) },
-            { PersistentArgumentType.Object, typeof(UnityEngine.Object) }
-        };
     }
 }
 

@@ -356,7 +356,7 @@ public class UltNoodleNodeView : Node
             }
 
             // only rebuild if we changed from const to varman or vice versa
-            if ((prev == "" && now != "") || (prev != "" && now == ""))
+            if (string.IsNullOrEmpty(prev) != string.IsNullOrEmpty(now))
                 RebuildConstantField(input);
         });
         dropdown.value = string.IsNullOrEmpty(input.EditorConstName) ? "" : input.EditorConstName;

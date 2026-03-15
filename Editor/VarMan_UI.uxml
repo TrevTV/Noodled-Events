@@ -31,6 +31,9 @@
                 <ui:Button text="bool" display-tooltip-when-elided="true" name="bool" />
                 <ui:Button text="string" display-tooltip-when-elided="true" name="string" />
                 <ui:Button text="obj" display-tooltip-when-elided="true" name="obj" />
+                <ui:Button text="Vector2" display-tooltip-when-elided="true" name="vector2" />
+                <ui:Button text="Vector3" display-tooltip-when-elided="true" name="vector3" />
+                <ui:Button text="Color" display-tooltip-when-elided="true" name="color" />
             </ui:VisualElement>
         </ui:VisualElement>
         <ui:Button display-tooltip-when-elided="true" name="ConfigBT" style="position: absolute; right: 3px; margin-left: 0; margin-right: 0; margin-top: 0; margin-bottom: 0; padding-left: 0; padding-right: 0; padding-top: 0; padding-bottom: 0; top: 3px;">
