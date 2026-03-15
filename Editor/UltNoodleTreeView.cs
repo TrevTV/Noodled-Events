@@ -324,6 +324,7 @@ public class UltNoodleTreeView : GraphView
             id = nv.Node.ID,
             cookBookName = nv.Node.Book.GetType().FullName,
             bookTag = nv.Node.BookTag,
+            nodeDefName = nv.Node.Name,
             position = nv.GetPosition().position,
             inputConstants = nv.Node.DataInputs.Select(di =>
             {
@@ -398,7 +399,7 @@ public class UltNoodleTreeView : GraphView
                 continue;
             }
 
-            var def = UltNoodleEditor.AllNodeDefs.FirstOrDefault(d => d.BookTag == nodeData.bookTag && d.CookBook == book);
+            var def = UltNoodleEditor.AllNodeDefs.FirstOrDefault(d => d.BookTag == nodeData.bookTag && d.CookBook == book && d.Name == nodeData.nodeDefName);
             if (def == null)
             {
                 Debug.LogWarning($"Could not find node def {nodeData.id} in book {book.name} when pasting nodes, skipping");
@@ -694,6 +695,7 @@ public class UltNoodleTreeView : GraphView
         public string id;
         public string cookBookName;
         public string bookTag;
+        public string nodeDefName;
         public Vector2 position;
         public object[] inputConstants;
     }
