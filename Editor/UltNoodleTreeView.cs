@@ -273,6 +273,9 @@ public class UltNoodleTreeView : GraphView
         {
             if (node.NoadType == SerializedNode.NodeType.Redirect)
             {
+                if (node.Name == "Redirector") // update bad names to use the correct tag for serialization
+                    node.Name = node.BookTag.Replace('_', '.');
+
                 var redirectView = new UltNoodleRedirectNodeView(node);
                 redirectView.OnNodeSelected = OnNodeSelected;
                 AddElement(redirectView);
@@ -365,12 +368,38 @@ public class UltNoodleTreeView : GraphView
                 if (e.output?.node is UltNoodleNodeView fromNode &&
                     e.input?.node is UltNoodleNodeView toNode)
                 {
+                    string fromPortId = e.output.userData switch
+                    {
+                        NoodleFlowOutput fo => fo.ID,
+                        NoodleDataOutput dout => dout.ID,
+                        _ => null
+                    };
+
+                    string toPortId = e.input.userData switch
+                    {
+                        NoodleFlowInput fi => fi.ID,
+                        NoodleDataInput din => din.ID,
+                        _ => null
+                    };
+
+                    int fromPortIndex = e.output.userData is NoodleFlowOutput ?
+                                            Array.IndexOf(fromNode.Node.FlowOutputs, e.output.userData) :
+                                            Array.IndexOf(fromNode.Node.DataOutputs, e.output.userData);
+
+                    int toPortIndex = e.input.userData is NoodleFlowInput ?
+                                            Array.IndexOf(toNode.Node.FlowInputs, e.input.userData) :
+                                            Array.IndexOf(toNode.Node.DataInputs, e.input.userData);
+
+
                     return new EdgeData
                     {
+                        isFlow = e.output.userData is NoodleFlowOutput,
                         fromNodeId = fromNode.Node.ID,
-                        fromPortName = e.output.portName,
+                        fromPortId = fromPortId,
+                        fromPortIndex = fromPortIndex,
                         toNodeId = toNode.Node.ID,
-                        toPortName = e.input.portName
+                        toPortId = toPortId,
+                        toPortIndex = toPortIndex,
                     };
                 }
                 return null;
@@ -502,6 +531,30 @@ public class UltNoodleTreeView : GraphView
             UltNoodleEditor.Editor.TreeView.RenderNewNodes();
             oldToNewIds[nodeData.id] = nod.ID;
 
+            // get the ports of the old and new nodes to add them to the oldToNewIds mapping as well
+            void MapPorts(IEnumerable<EdgeData> edges, bool isInput, object[] ports)
+            {
+                foreach (var edge in edges)
+                {
+                    var (oldId, index) = isInput ? (edge.toPortId, edge.toPortIndex) : (edge.fromPortId, edge.fromPortIndex);
+                    var port = ports[index];
+                    string id = port switch
+                    {
+                        NoodleFlowInput fi => fi.ID,
+                        NoodleFlowOutput fo => fo.ID,
+                        NoodleDataInput din => din.ID,
+                        NoodleDataOutput dout => dout.ID,
+                        _ => null
+                    };
+                    oldToNewIds[oldId] = id;
+                }
+            }
+
+            MapPorts(wrapper.edges.Where(e => e.toNodeId == nodeData.id && e.isFlow), true, nod.FlowInputs);
+            MapPorts(wrapper.edges.Where(e => e.fromNodeId == nodeData.id && e.isFlow), false, nod.FlowOutputs);
+            MapPorts(wrapper.edges.Where(e => e.toNodeId == nodeData.id && !e.isFlow), true, nod.DataInputs);
+            MapPorts(wrapper.edges.Where(e => e.fromNodeId == nodeData.id && !e.isFlow), false, nod.DataOutputs);
+
             AddToSelection(FindNodeView(nod));
         }
 
@@ -518,8 +571,11 @@ public class UltNoodleTreeView : GraphView
             var toView = FindNodeView(toNode);
             if (fromView == null || toView == null) continue;
 
-            var fromPort = fromView.GetPortByName(edgeData.fromPortName, Direction.Output);
-            var toPort = toView.GetPortByName(edgeData.toPortName, Direction.Input);
+            if (!oldToNewIds.TryGetValue(edgeData.fromPortId, out var newPortFromId)) continue;
+            if (!oldToNewIds.TryGetValue(edgeData.toPortId, out var newPortToId)) continue;
+
+            var fromPort = fromView.GetPortById(newPortFromId, Direction.Output);
+            var toPort = toView.GetPortById(newPortToId, Direction.Input);
             if (fromPort == null || toPort == null) continue;
 
             HandleEdgeCreation(fromPort, toPort, true);
@@ -691,6 +747,8 @@ public class UltNoodleTreeView : GraphView
                 return;
             }
 
+            node.Name = node.BookTag.Replace('_', '.'); // now we know what type to use, update the name to match the type for serialization
+
             evt.StopPropagation();
 
             var rerouteView = new UltNoodleRedirectNodeView(node);
@@ -786,10 +844,13 @@ public class UltNoodleTreeView : GraphView
     [Serializable]
     private class EdgeData
     {
+        public bool isFlow;
         public string fromNodeId;
-        public string fromPortName;
+        public string fromPortId;
+        public int fromPortIndex;
         public string toNodeId;
-        public string toPortName;
+        public string toPortId;
+        public int toPortIndex;
     }
 }
 #endif
