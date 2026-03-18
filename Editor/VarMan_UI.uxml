@@ -14,6 +14,7 @@
             <ui:VisualElement style="flex-direction: row;">
                 <ui:VisualElement style="flex-shrink: 0; flex-grow: 1;" />
                 <ui:Toggle text=" Auto-Enforce? " binding-path="AutoEnforce" style="flex-direction: row;" />
+                <ui:Button text="Enforce All" name="EnforceAllBT" />
                 <uie:ColorField value="RGBA(0.000, 1.000, 1.000, 1.000)" name="VarsBGColor" binding-path="VarsBGColor" style="max-width: 43px;" />
                 <ui:VisualElement style="flex-shrink: 0; flex-grow: 1;" />
             </ui:VisualElement>
